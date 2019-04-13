@@ -2,7 +2,9 @@
 
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.json.JSONArray;
 import org.json.JSONObject;
+import org.omg.CosNaming.NamingContextExtPackage.StringNameHelper;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -11,14 +13,16 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class simpleThread extends Thread {
     private static Sheet sheet;
-    private static volatile int row_number = 1;//共享的xls表和行号
+    private static AtomicInteger row_number = new AtomicInteger(1);//共享的xls表和行号,支持原子操作i++
     private final static int LAT_number = 17;//纬度所在列
     private final static int LNG_number = 16;//经度所在列
-
-    private static String path = "http://api.map.baidu.com/place/v2/search?";
+    private final static int DIS_number = 19;//地铁距离所在列
+    private int innerRow = 0;
+    private final static String path = "http://api.map.baidu.com";
     //访问参数
     String query;
     String location;
@@ -53,11 +57,16 @@ public class simpleThread extends Thread {
 
     @Override
     public void run(){
-        while(row_number<=sheet.getLastRowNum()){
-            location = getStatics();
+        while((innerRow = row_number.getAndIncrement())<=10){//共享量转为私有量，以支持之后的操作引用
+            Row row = sheet.getRow(innerRow);
+            Double LAT = row.getCell(LAT_number).getNumericCellValue();
+            Double LNG = row.getCell(LNG_number).getNumericCellValue();
+            location = LAT.toString()+","+LNG.toString();
             if(location!=null){
                 try {
-                    URL url = new URL(path+MD5(query,location,radius,output,ak,filter,scope,page_num,sk));
+                    String url_path=path+MD5(query,location,radius,output,ak,filter,scope,page_num,sk);
+                    URL url = new URL(url_path);
+                    System.out.println(url_path);
                     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                     connection.setRequestMethod("GET");
                     connection.setConnectTimeout(5000);
@@ -74,7 +83,25 @@ public class simpleThread extends Thread {
                         inputStream.close();
 
                         JSONObject jsonObject = new JSONObject(jsonString);
-                        System.out.println(jsonObject.toString());
+                        if("ok".equals(jsonObject.get("message"))){//返回值为ok才继续解析
+                            if("0".equals(jsonObject.get("total"))){
+                                //未搜索到
+                            }
+                            else{
+                                /*
+                                继续往下解析json,形如
+                                {"total":79,"message":"ok","results":[{"area":"西湖区","uid":"279bf9ff217d927ba5da3943",
+                                "address":"地铁2号线","province":"浙江省","city":"杭州市","detail_info":{"distance":12984,
+                                "children":[],"tag":"地铁站"},"name":"文新","location":{"lng":120.104622,"lat":30.295617},
+                                "detail":1}]
+                                 */
+                                System.out.println(jsonObject.toString());
+                                JSONArray jsonArray = new JSONArray(jsonObject.get("results"));
+                                int distance = (Integer) new JSONObject(new JSONObject(jsonArray.get(0))
+                                        .get("detail_info")).get("distance");
+                                row.getCell(DIS_number).setCellValue(distance);
+                            }
+                        }
                     }
                 } catch (MalformedURLException e) {
                     e.printStackTrace();
@@ -87,18 +114,6 @@ public class simpleThread extends Thread {
         }
     }
 
-    /*
-    读取经纬度方法
-     */
-    synchronized private String getStatics(){
-        if(sheet!=null && row_number<=sheet.getLastRowNum()){
-            Row row = sheet.getRow(row_number++);
-            Double LAT = row.getCell(LAT_number).getNumericCellValue();
-            Double LNG = row.getCell(LNG_number).getNumericCellValue();
-            return LAT.toString()+","+LNG.toString();
-        }
-        return null;
-    }
 
     /**
      * url编码sn验证
@@ -114,7 +129,8 @@ public class simpleThread extends Thread {
      * @return
      * @throws UnsupportedEncodingException
      */
-    private String MD5(String query,String loaction,String radius,String output,String ak,String filter,String scope,String page_num,String sk) throws UnsupportedEncodingException {
+    private String MD5(String query,String loaction,String radius,String output,String ak,String filter,String scope
+            ,String page_num,String sk) throws UnsupportedEncodingException {
         //map赋值
         paramsMap.put("query",query);
         paramsMap.put("location",loaction);
@@ -123,25 +139,34 @@ public class simpleThread extends Thread {
         paramsMap.put("ak",ak);
         paramsMap.put("filter",filter);
         paramsMap.put("scope",scope);
+        paramsMap.put("page_size","1");
         paramsMap.put("page_num",page_num);
 
         //编码拼接
-        StringBuffer queryString = new StringBuffer();
+//        StringBuffer queryString = new StringBuffer();
+//        for(Map.Entry<String,String> pair:paramsMap.entrySet()){
+//            queryString.append(pair.getKey()+"=");
+//            queryString.append(URLEncoder.encode((String)pair.getValue(),"UTF-8")+"&");
+//        }
+//        if(queryString.length()>1)queryString.deleteCharAt(queryString.length()-1);
+//        String wholeString = new String("/place/v2/search?"+queryString.toString()+sk);
+//        wholeString = URLEncoder.encode(wholeString,"UTF-8");
+//        String sn = MD5_sn(wholeString);
+        StringBuffer resString = new StringBuffer();
         for(Map.Entry<String,String> pair:paramsMap.entrySet()){
-            queryString.append(pair.getKey()+"=");
-            queryString.append(URLEncoder.encode((String)pair.getValue(),"UTF-8")+"&");
+            resString.append(pair.getKey()+"=");
+            resString.append(pair.getValue()+"&");
         }
-        if(queryString.length()>0){
-            queryString.deleteCharAt(queryString.length()-1);
-        }
-        String wholeString = new String(queryString+sk);
-        wholeString = URLEncoder.encode(wholeString,"UTF-8");
+        if(resString.length()>1)resString.deleteCharAt(resString.length()-1);
+        return "/place/v2/search?"+resString;
 
-        //来自stackoverflow的MD5计算方法，调用了MessageDigest库函数，并把byte数组结果转换成16进制
+    }
+
+    private String MD5_sn(String md5) {
         try {
             java.security.MessageDigest md = java.security.MessageDigest
                     .getInstance("MD5");
-            byte[] array = md.digest(wholeString.getBytes());
+            byte[] array = md.digest(md5.getBytes());
             StringBuffer sb = new StringBuffer();
             for (int i = 0; i < array.length; ++i) {
                 sb.append(Integer.toHexString((array[i] & 0xFF) | 0x100)
