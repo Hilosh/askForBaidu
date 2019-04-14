@@ -28,12 +28,12 @@ public class mainProcess {
             Sheet sheet = xssfWorkbook.getSheetAt(0);
             Row row = sheet.getRow(0);
             simpleThread.setSheet(sheet);
-            ExecutorService executorService =Executors.newFixedThreadPool(10);
+            ExecutorService executorService =Executors.newFixedThreadPool(4);
             List<FutureTask<String>> futureTaskList = new ArrayList<FutureTask<String>>();//希望等到所有子线程结束，主线程才继续
             Long start = System.currentTimeMillis();
-            for(int i =0;i<10;i++){
-                futureTaskList.add(new FutureTask<String>(new simpleThread("地铁站","100000","json","Fz5R3KUIDbM1gerdsqYabt611pWhUkTj"
-                        ,"sort_name:distance|sort_rule:1","2","0","BNpbsph8G5gkhzt4qqq8nP01Ad8qj1B0")));
+            for(int i =0;i<4;i++){
+                futureTaskList.add(new FutureTask<String>(new simpleThread("地铁站","100000","json","*****"
+                        ,"sort_name:distance|sort_rule:1","2","0","*****")));
                 executorService.submit(futureTaskList.get(i));
             }
             executorService.shutdown();
@@ -50,9 +50,9 @@ public class mainProcess {
 //
 //            }
             if(isdone(futureTaskList)){
-                Long end = System.currentTimeMillis();
-                System.out.println((end-start)/sheet.getLastRowNum());
-                System.out.println(sheet.getLastRowNum()/(end-start)*1000);
+//                Long end = System.currentTimeMillis();
+//                System.out.println((end-start)/sheet.getLastRowNum());
+//                System.out.println(sheet.getLastRowNum()/(end-start)*1000);
                 File fileout = new File("src/main/resources/resr.xls");
                 OutputStream outputStream = new FileOutputStream(fileout);
                 ((HSSFWorkbook) xssfWorkbook).write(outputStream);

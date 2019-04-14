@@ -123,7 +123,7 @@ public class simpleThread implements Callable<String> {
     }
 
     public String call() throws Exception {
-        while((innerRow = row_number.getAndIncrement())<=50){//共享量转为私有量，以支持之后的操作引用
+        while((innerRow = row_number.getAndIncrement())<=sheet.getLastRowNum()){//共享量转为私有量，以支持之后的操作引用
             Row row = sheet.getRow(innerRow);
             Double LAT = row.getCell(LAT_number).getNumericCellValue();
             Double LNG = row.getCell(LNG_number).getNumericCellValue();
@@ -152,6 +152,7 @@ public class simpleThread implements Callable<String> {
                         if("ok".equals(jsonObject.get("message"))){//返回值为ok才继续解析
                             if("0".equals(jsonObject.get("total"))){
                                 //未搜索到
+                                row.createCell(DIS_number).setCellValue("0");
                             }
                             else{
                                 /*
@@ -169,6 +170,7 @@ public class simpleThread implements Callable<String> {
                                 System.out.println(innerRow+":"+distance);
                             }
                         }
+                        else row.createCell(DIS_number).setCellValue("NAN");
                     }
                 } catch (MalformedURLException e) {
                     e.printStackTrace();
