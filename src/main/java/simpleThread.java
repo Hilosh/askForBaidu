@@ -56,7 +56,6 @@ public class simpleThread implements Callable<String> {
         sheet = st;
     }
 
-    public static Sheet getSheet(){return sheet;}
 
 
 
