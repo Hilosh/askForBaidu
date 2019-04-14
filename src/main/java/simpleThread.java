@@ -1,8 +1,10 @@
 
 
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.omg.CosNaming.NamingContextExtPackage.StringNameHelper;
 
@@ -13,9 +15,10 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class simpleThread extends Thread {
+public class simpleThread implements Callable<String> {
     private static Sheet sheet;
     private static AtomicInteger row_number = new AtomicInteger(1);//共享的xls表和行号,支持原子操作i++
     private final static int LAT_number = 17;//纬度所在列
@@ -36,8 +39,7 @@ public class simpleThread extends Thread {
 
     private Map<String,String> paramsMap = new LinkedHashMap<String, String>();
 
-    simpleThread(String threadname,String query,String radius,String output,String ak,String filter,String scope,String page_num,String sk){
-        super(threadname);
+    simpleThread(String query,String radius,String output,String ak,String filter,String scope,String page_num,String sk){
         this.query = query;
         this.radius = radius;
         this.output = output;
@@ -54,65 +56,8 @@ public class simpleThread extends Thread {
         sheet = st;
     }
 
+    public static Sheet getSheet(){return sheet;}
 
-    @Override
-    public void run(){
-        while((innerRow = row_number.getAndIncrement())<=10){//共享量转为私有量，以支持之后的操作引用
-            Row row = sheet.getRow(innerRow);
-            Double LAT = row.getCell(LAT_number).getNumericCellValue();
-            Double LNG = row.getCell(LNG_number).getNumericCellValue();
-            location = LAT.toString()+","+LNG.toString();
-            if(location!=null){
-                try {
-                    String url_path=path+MD5(query,location,radius,output,ak,filter,scope,page_num,sk);
-                    URL url = new URL(url_path);
-                    System.out.println(url_path);
-                    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                    connection.setRequestMethod("GET");
-                    connection.setConnectTimeout(5000);
-                    if(connection.getResponseCode()==200){//访问成功
-                        InputStream inputStream=connection.getInputStream();
-                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                        byte[] buffer = new byte[1024];
-                        int len = 0;
-                        while((len=inputStream.read(buffer))!=-1){
-                            byteArrayOutputStream.write(buffer,0,len);
-                        }
-                        String jsonString = byteArrayOutputStream.toString();
-                        byteArrayOutputStream.close();
-                        inputStream.close();
-
-                        JSONObject jsonObject = new JSONObject(jsonString);
-                        if("ok".equals(jsonObject.get("message"))){//返回值为ok才继续解析
-                            if("0".equals(jsonObject.get("total"))){
-                                //未搜索到
-                            }
-                            else{
-                                /*
-                                继续往下解析json,形如
-                                {"total":79,"message":"ok","results":[{"area":"西湖区","uid":"279bf9ff217d927ba5da3943",
-                                "address":"地铁2号线","province":"浙江省","city":"杭州市","detail_info":{"distance":12984,
-                                "children":[],"tag":"地铁站"},"name":"文新","location":{"lng":120.104622,"lat":30.295617},
-                                "detail":1}]
-                                 */
-                                System.out.println(jsonObject.toString());
-                                JSONArray jsonArray = new JSONArray(jsonObject.get("results"));
-                                int distance = (Integer) new JSONObject(new JSONObject(jsonArray.get(0))
-                                        .get("detail_info")).get("distance");
-                                row.getCell(DIS_number).setCellValue(distance);
-                            }
-                        }
-                    }
-                } catch (MalformedURLException e) {
-                    e.printStackTrace();
-                } catch (UnsupportedEncodingException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
 
 
     /**
@@ -178,4 +123,65 @@ public class simpleThread extends Thread {
         return null;
     }
 
+    public String call() throws Exception {
+        while((innerRow = row_number.getAndIncrement())<=50){//共享量转为私有量，以支持之后的操作引用
+            Row row = sheet.getRow(innerRow);
+            Double LAT = row.getCell(LAT_number).getNumericCellValue();
+            Double LNG = row.getCell(LNG_number).getNumericCellValue();
+            location = LAT.toString()+","+LNG.toString();
+            if(location!=null){
+                try {
+                    String url_path=path+MD5(query,location,radius,output,ak,filter,scope,page_num,sk);
+                    URL url = new URL(url_path);
+                    //System.out.println(url_path);
+                    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                    connection.setRequestMethod("GET");
+                    connection.setConnectTimeout(5000);
+                    if(connection.getResponseCode()==200){//访问成功
+                        InputStream inputStream=connection.getInputStream();
+                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                        byte[] buffer = new byte[1024];
+                        int len = 0;
+                        while((len=inputStream.read(buffer))!=-1){
+                            byteArrayOutputStream.write(buffer,0,len);
+                        }
+                        String jsonString = byteArrayOutputStream.toString();
+                        byteArrayOutputStream.close();
+                        inputStream.close();
+
+                        JSONObject jsonObject = new JSONObject(jsonString);
+                        if("ok".equals(jsonObject.get("message"))){//返回值为ok才继续解析
+                            if("0".equals(jsonObject.get("total"))){
+                                //未搜索到
+                            }
+                            else{
+                                /*
+                                继续往下解析json,形如
+                                {"total":79,"message":"ok","results":[{"area":"西湖区","uid":"279bf9ff217d927ba5da3943",
+                                "address":"地铁2号线","province":"浙江省","city":"杭州市","detail_info":{"distance":12984,
+                                "children":[],"tag":"地铁站"},"name":"文新","location":{"lng":120.104622,"lat":30.295617},
+                                "detail":1}]
+                                 */
+                                JSONArray jsonArray = new JSONArray(jsonObject.get("results").toString());
+                                int distance = (Integer) new JSONObject(new JSONObject(jsonArray.get(0).toString())
+                                        .get("detail_info").toString()).get("distance");
+                                Cell cell = row.createCell(DIS_number);
+                                cell.setCellValue(distance);
+                                System.out.println(innerRow+":"+distance);
+                            }
+                        }
+                    }
+                } catch (MalformedURLException e) {
+                    e.printStackTrace();
+                } catch (UnsupportedEncodingException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }catch (JSONException e){
+                    e.printStackTrace();
+                }
+            }
+        }
+        return "ok";
+    }
 }
