@@ -14,7 +14,7 @@ public class mainProcess {
 
     private static boolean isdone(List<FutureTask<String>> list) throws ExecutionException, InterruptedException {//所有线程是否完成
         for(FutureTask<String> futureTask:list){
-            if(futureTask.get()!="ok")return false;
+            if(!futureTask.get().equals("ok"))return false;
         }
         return true;
     }
@@ -31,28 +31,17 @@ public class mainProcess {
             ExecutorService executorService =Executors.newFixedThreadPool(4);
             List<FutureTask<String>> futureTaskList = new ArrayList<FutureTask<String>>();//希望等到所有子线程结束，主线程才继续
             Long start = System.currentTimeMillis();
-            for(int i =0;i<4;i++){
-                futureTaskList.add(new FutureTask<String>(new simpleThread("地铁站","100000","json","*****"
+            for(int i =0;i<3;i++){
+                futureTaskList.add(new FutureTask<String>(new simpleThread("地铁站","100000","json","------"
                         ,"sort_name:distance|sort_rule:1","2","0","*****")));
                 executorService.submit(futureTaskList.get(i));
             }
+            //不再提交线程，等待线程结束则关闭线程池
             executorService.shutdown();
-//            while (true){
-//                if(isdone(futureTaskList)){
-//                    File fileout = new File("src/main/resources/resr.xls");
-//                    OutputStream outputStream = new FileOutputStream(fileout);
-//                    ((HSSFWorkbook) xssfWorkbook).write(outputStream);
-//                    xssfWorkbook.close();
-//                    outputStream.close();
-//                    stream.close();
-//                    return;
-//                }
-//
-//            }
             if(isdone(futureTaskList)){
-//                Long end = System.currentTimeMillis();
-//                System.out.println((end-start)/sheet.getLastRowNum());
-//                System.out.println(sheet.getLastRowNum()/(end-start)*1000);
+                Long end = System.currentTimeMillis();
+                System.out.println("平均每条耗时："+(end-start)/sheet.getLastRowNum()+"ms");
+                System.out.println("总耗时："+(end-start)+"ms");
                 File fileout = new File("src/main/resources/resr.xls");
                 OutputStream outputStream = new FileOutputStream(fileout);
                 ((HSSFWorkbook) xssfWorkbook).write(outputStream);
@@ -61,8 +50,6 @@ public class mainProcess {
                 stream.close();
                 return;
             }
-
-
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
